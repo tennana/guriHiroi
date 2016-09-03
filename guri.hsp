@@ -1,0 +1,553 @@
+/**
+guri
+
+Copyright (c) 2008 tennana
+
+This software is released under the MIT License.
+http://opensource.org/licenses/mit-license.php
+*/
+
+#include "HSPDX.AS";hspdx.dll include
+#include "hspda.as";hspda.dll include
+
+	wx=800:wy=600				; 画面の解像度の指定
+;	wx=1024:wy=768				; 画面の解像度の指定
+	GameName = "ぐり。拾い"			; ゲーム名
+	stx=40:sty=40				; スプライト有効範囲開始点
+	glx=575:gly=600-40-64			; スプライト有効範囲終了点
+	moves  = 3					; １フレーム毎の自機移動量(?)
+	FPS    = 60					; FPS設定
+	NumFigu= 6					; 得点の桁数
+	Window = 0					; Windowモード
+	Draw   = 1					; 0:DirectDraw 1:Direct3D
+	Music  = 1					; Music再生
+	MusicFile = "tamfu02.mid"	; MusicFile
+	Sound  = 1					; Sound再生
+	onerror gosub *Ranking_Save:onerror 0;ランキング読み込み失敗時
+	GameMode = 0
+	MoveSpeedG = 4				;ぐりの加速度(基準) flag=2
+								;てんぷら：基準-1   flag=4
+								;みみはな：基準+1   flag=8
+								;にゅぅ  ：基準*4   flag=16
+	mmload ""+MusicFile+"",0,1	;音楽ファイル読み出し:0/ゲーム中
+	screen 1,200,150,6
+	mmload "bosu08.wav",1,0		;音声ファイル読み出し:1/ぐり
+	mmload "bosu15.wav",2,0		;音声ファイル読み出し:2/てんぷら
+	mmload "bom29.wav",3,0		;音声ファイル読み出し:3/みみはな
+	mmload "push55.wav",4,0		;音声ファイル読み出し:4/にゅぅ
+	;実行ファイル作成オプション
+	#packopt type Window
+	#packopt xsize 400
+	#packopt ysize 400
+	#packopt name "guri"
+	if Window=0:ky = 1
+	#packopt hide ky
+	#epack "gameback.gif"
+	#epack "chara.gif"
+	#epack "hspdx.as"
+	#epack "hspda.as"
+	#epack "title.gif"
+	buffer 3,800,600
+	picload "chara.gif",1
+	gsel 0
+	title GameName
+	names = str("No Name");初期名
+	goto *Ranking_Load
+
+	objmode ,1
+
+*toptitle
+	if RNG=1:gosub *ranking_add_window
+	screen 0,400,400
+	cls
+	pos 45,20
+	picload "title.gif",1
+	pos 155,235
+	button goto "GameStart",*GameSetUp
+	button goto "Ranking",*GameRanking
+	button goto "How to",*How_to_play
+	button goto "Credit",*Credit
+	pos 225,235
+	objsize 80,20
+	chkbox "Mode:Hard",GameMode;id=4
+repeat
+getkey gameend,71
+if gameend=1:goto *GameSetUp;ゲームスタート
+getkey gameend,82
+if gameend=1:goto *GameRanking;ランキング
+getkey gameend,72
+if gameend=1:goto *How_to_play;How to
+getkey gameend,67
+if gameend=1:goto *Credit;クレジット
+getkey gameend,77
+if gameend=1:if GameMode=1:objprm 4,0:wait 10:else:objprm 4,1:wait 10;ゲームモード反転
+getkey gameend,27
+if gameend=1:gosub *Ranking_Save:end;ESCキーで終了
+wait 5
+loop
+
+;	stop
+
+;命令定義帯
+#deffunc NumberPrint_sub var numb, int moded,int pnx
+	if numb=0:numb=10
+	pos pnx,
+	color 128,128,128:gmode 2
+	if moded=0{
+	gcopy 3,144+(24*numb),0,24,38
+	}else{
+		if moded=2{
+			gsel 4:gmode 0
+			pos 24*cnt,0
+			gcopy 3,144+(24*numb),0,24,38
+		}else{
+			if Draw=1:es_excopy 0,144+24*numb,0,24,38,24,38:else:es_copy 0,144+24*numb,0,24,38
+		}
+	}
+return
+
+#deffunc NumberPrint int num, int figu,int moded,int pnx,local numb
+numb = strf("%0"+figu+"d",num)
+if moded=2:gsel 4:cls 1
+repeat figu
+temp = strmid(numb,cnt,1)
+NumberPrint_sub temp,moded,pnx+24*cnt
+loop
+if moded=2:gsel 4:es_buffer 2,0,$808080,2,Draw:gsel 3
+return
+
+#deffunc NumberPrint_Draw
+gmode 2
+color 128,128,128
+if Draw=1:es_excopy 2,0,0,24*NumFigu,38,24*NumFigu,38:else:es_copy 2,0,0,24*NumFigu,38
+return
+
+*GameSetUp
+	gsel 1,-1
+	gsel 0
+	if window=1:screen 0,wx,wy
+	cls
+	es_ini 101,10			; system初期化(スプライト101、キャラクタ10まで)
+	es_screen wx,wy,16,0,Window,Draw; スクリーン初期化
+	es_area stx,sty,glx,gly; スプライト有効範囲
+	onexit 1
+	onexit goto *out_exit		;終了時の処理
+	if stat=1 : goto *dderr1
+	if stat=2 : goto *dderr2
+
+	goto *start				; 正常に完了
+
+*dderr1
+	dialog "DirectXの初期化に失敗しました",1
+	end
+*dderr2
+	dialog "スクリーンの初期化に失敗しました",1
+*dderr3
+	es_bye:wait 100
+	dialog "画像の初期化に失敗しました",1
+*out_exit
+	mci "stop myid"
+	es_bye:wait 100:onexit 0:goto *toptitle
+
+	;------------------------------------------------------------------
+
+*start;225,600
+	color 175,175,175
+	es_cls 0,0,0
+	buffer 4,24*NumFigu,38
+	buffer 3,800,600
+	cls 2
+	picload "gameback.gif",1
+	es_buffer 1,0,$000000,2,0
+	cls 2
+	buffer 3,640,480
+	picload "chara.gif",1
+	es_buffer 0,0,$808080,2,Draw
+;	buffer 3,1,1
+	if stat=1{
+	es_bye : wait 50
+        dialog "VRAM容量が不足しているため終了します。":
+	end
+	}
+;	if Sound:mmplay 0
+	wait 150
+	if Music{
+	;あえてMCIを叩く
+	mci "open " + MusicFile + " alias myid type mpegvideo"
+	mci "play myid repeat from 00:00:00"
+	}
+	GSEL 0,Window
+	starttime = gettime(4) * 3600 + gettime(5) * 60 + gettime(6)
+	es_size 24,38;サイズ設定 (数字＊１０ 1:168,0～ 24,24,24,
+
+	es_size 72,72,90;スプライトのサイズ設定
+	es_pat 0,0,0,0;キャラクターパターン設定（カゴ
+	es_size 64,64,50;スプライトのサイズ設定
+	es_pat 1,0,72,0;キャラクターパターン設定(ぐり。
+	es_pat 3,72,0,0;キャラクターパターン設定(てんぷら
+	es_pat 4,72,72,0;キャラクターパターン設定(みみはな
+	es_size 32,32,100;スプライトのサイズ設定
+	es_pat 2,136,0,0;キャラクターパターン設定(にゅぅ)
+	es_size 32,18,0;スプライトのサイズ設定
+	es_pat 5,136,32,0;キャラクターパターン設定(+100)
+	es_pat 6,136,50,0;キャラクターパターン設定(-300)
+	es_pat 7,136,68,0;キャラクターパターン設定(+800)
+
+	es_set 0,50,gly-8,0,Draw;スプライト設定 自機
+;	randomize
+	rndf_ini
+	color 255,255,255
+	point = int(0)
+	NumberPrint point,NumFigu,2,0
+
+*main
+;	es_cls 255,255,255
+	stick ky,15,1;キーボードのチェック
+	if ((ky&1)|(ky&4)|(ky&2)|(ky&8)){
+	es_get px,0,3
+	es_get py,0,5
+	if ky&1 :px-=moves :if px<stx :px=stx
+	if ky&4 :px+=moves :if px>(glx-72) :px=glx-72
+	es_pos 0,px,py
+	}
+;	randomize(gettime(7)*gettime(6)*RNG)
+;	RNG = rnd(1000);
+	rndf_geti RNG,1000
+	if RNG<(10+GameMode*5){;ぐり出現率
+		es_exnew Number,1,25
+		if Number!=-1 {
+;			randomize(gettime(7)*RNG*Number) : 
+			rndf_geti gameend,glx-stx-64
+			es_set Number,gameend+stx,40,1,Draw
+			es_gravity Number,0,MoveSpeedG:es_flag Number,$400
+			es_type Number,2
+		};スプライト設定
+	}
+	if RNG>(995-GameMode*2){;にゅぅ出現率
+		es_exnew Number,26,27;同時出現数制限
+		if Number!=-1 {
+;			randomize(gettime(7)*RNG*Number) : 
+			rndf_geti gameend,glx-stx-32
+			es_set Number,gameend+stx,40,2,Draw
+			es_gravity Number,0,MoveSpeedG*4:es_flag Number,$400
+			es_adir Number,0,100*MoveSpeedG
+			es_type Number,16
+		};スプライト設定
+	}
+	if RNG<506&&RNG>500{;てんぷら出現率
+		es_exnew Number,51,65;同時出現数制限
+		if Number!=-1 {
+;			randomize(gettime(7)*RNG*Number) :
+			rndf_geti gameend,glx-stx-64
+			es_set Number,gameend+stx,45,3,Draw
+			es_gravity Number,0,MoveSpeedG-1:es_flag Number,$400
+			es_type Number,4
+	};スプライト設定
+	}
+	if RNG<306&&RNG>300{;みみはな出現率
+		es_exnew Number,76,85;同時出現数制限
+		if Number!=-1 {
+;			randomize(gettime(7)*RNG*Number) :
+			rndf_geti gameend,glx-stx-64
+			es_set Number,gameend+stx,45,4,Draw
+			es_gravity Number,0,MoveSpeedG+1:es_flag Number,$400
+			es_type Number,8
+			rndf_geti gameend,9
+			if GameMode = 1&gameend < 6:es_get px,0,3:es_get py,0,5:es_aim Number,px,py,340
+	};スプライト設定
+	}
+	repeat;衝突判定
+	es_check Number,0,0,1,1,100
+	if Number=-1:break
+	es_get RNG,Number,13
+	es_kill Number;当たったのでとりあえず消す
+	if RNG = 2 {
+	point+=100
+	NumberPrint point,NumFigu,2,0
+	if Sound:mmplay 1;ぐりなら加点
+	}
+	if RNG = 4{
+	point-=300
+	if point>=0:NumberPrint point,NumFigu,2,0
+	if Sound:mmplay 2;てんぷらなら減点
+	}
+	if RNG = 8{
+	point =0
+	NumberPrint point,NumFigu,2,0
+	mci "stop myid"
+	if Sound:mmplay 3:mmstop
+	goto *gameover;みみはなれなら即死
+	}
+	if RNG =16{
+	point+=800
+	NumberPrint point,NumFigu,2,0
+	if Sound:mmplay 4;にゅぅなら加点
+	}
+	loop
+	gmode 4
+	pos 0,0
+	es_copy 1,0,0,800,600;背景を描く
+	es_draw;スプライト描写
+	timesec = 180 - (gettime(4) * 3600 + gettime(5) * 60 + gettime(6) - starttime)
+	pos 620,65
+	NumberPrint_Draw
+	pos 692,105
+	NumberPrint timesec,3,1,692
+	es_getfps RNG
+	pos 695,560
+	es_mes "FPS:"+RNG+""
+	es_sync -1000/FPS
+	await 1
+	getkey gameend,27
+	if gameend=1{RNG = 0:goto *out_exit}
+	if timesec <= 0:goto *gameover ;時間切れゲームオーバー
+	if point < 0{
+		if Music:mci "stop myid"
+		if Sound:mmplay 3
+		point=0:NumberPrint point,NumFigu,2,0
+		goto *gameover ;ポイント－によるゲームオーバー
+	}
+goto *main
+
+*gameover
+	es_kill 0
+	RNG = 0
+	if point > 10000:noteget gameend,9:if point > gameend:RNG = 1
+	repeat 300
+	es_cls					; 画面クリア
+	pos 0,0
+	es_copy 1,0,0,800,600;背景を描く
+	color 0,0,0
+	es_boxf stx,sty,glx,gly+64
+	es_draw 				; スプライト描画
+	pos 620,65
+	NumberPrint_Draw
+	pos 692,105
+	NumberPrint timesec,3,1,692
+	pos 130,230
+	font "ＭＳ 明朝",72,17
+	color 144,144,144
+	es_fmes "GAME OVER"
+	if RNG > 0{
+	font "ＭＳ 明朝",24,16
+	pos 230,300
+	es_fmes "Rank inn!"
+	}
+	es_sync -1 				; 画面の更新
+	await 1
+	getkey gameend,27
+	if gameend=1{break}
+	sysfont;フォント設定を元に戻す
+	loop
+	goto *out_exit
+
+*Ranking_Load
+notesel Ranking;ノートパット設定
+if SaveMode=1{
+SaveMode = 0
+onerror 1
+noteload "ranking.dat";読み込むファイル設定
+onerror 0
+}else{
+onerror 1
+exist "SaveData.dat"
+if strsize!=-1{
+vload_start "SaveData.dat"
+vload_get Ranking
+vload_end
+}else{
+SaveMode=1:goto *Ranking_Load
+}
+onerror 0
+}
+goto *toptitle
+
+*Ranking_Print
+pos 130,80
+repeat 10;10位まで表示 Temp:仮変数
+noteget Temp,cnt
+RNG = strf("%02d",(cnt+1))
+mes ""+RNG+" : " +  strmid(Temp,0,6) + ":" + strmid(Temp,7,30)
+loop
+return
+
+*Ranking_Sort
+sortnote Ranking,1;ソートする
+return
+
+*Ranking_Save
+	repeat
+	if notemax <=10:break
+	notedel 10
+	loop
+	if notemax =0:repeat 10:noteadd "010000,No Data",0,0:loop;初期ランキングデータ作成
+	if SaveMode=1{
+	notesave "ranking.dat"
+	}else{
+		vsave_start
+		vsave_put Ranking
+		vsave_end "SaveData.dat"
+		if stat!=0:SaveMode = 1:goto *Ranking_Save
+	}
+	return
+
+*GameRanking
+	cls
+	gosub *Ranking_Print
+	button "Title",*toptitle
+	repeat
+	getkey gameend,84
+	if gameend=1:goto *toptitle;タイトルへ戻る
+	getkey gameend,27
+	if gameend=1:end;ESCキーで終了
+	wait 5
+	loop
+	stop
+
+*ranking_add_window
+	gsel 1,2
+	title "ランクイン"
+	cls
+	pos 70,10
+	font "ＭＳ ゴシック",24,16	
+	point = strf("%06d",point)
+	mes ""+point+""
+	sysfont
+	pos 20,60
+	mes "名前を入力して下さい。"
+	pos 70,40
+	input names,80,20,14;id=0
+	pos 75,85
+	button gosub "登録", *ranking_add_add
+	button gosub "キャンセル", *ranking_add_close
+	objprm 0,""
+	repeat
+	stick gameend,1,1
+	if gameend&32:gosub *ranking_add_add
+	if gameend&128:gosub *ranking_add_close:wait 100
+	if RNG=10:break
+	await 1
+	loop
+	RNG = 0
+	return
+
+*ranking_add_add
+	if names=""|names="No Name":dialog "名前を入力して下さい",1,"登録確認":objsel 0:return
+	dialog ""+names+"："+point+" POINTで登録します。\nよろしいですか？",2,"登録確認"
+	if stat=7:objsel 0:return
+	noteadd ""+point+","+names+"",0,0
+	gosub *Ranking_Sort
+	gosub *Ranking_Save
+	gosub *ranking_add_close
+	return
+	
+*ranking_add_close
+	gsel 1,-1
+	gsel 0,1
+	RNG = 10;閉じたフラグ
+	return
+	
+*How_to_play
+	cls
+	RNG = {"
+［目的］
+カゴを動かしてひたすら上から落ちてくる
+「どんぐり。」を集めつつ３分間生き延びるゲーム。
+
+［操作方法］（タイトル画面）
+　Gキー：ゲームスタート
+　Rキー：ランキング表示
+　Hキー：How toを表示
+　Cキー：Creditを表示
+　Mキー：Hard Modeのオン・オフ
+Escキー：プログラム終了
+
+［操作方法］（ゲーム中）
+←キー ：カゴを左に移動する
+→キー ：カゴを右に移動する
+Escキー：タイトル画面へ
+
+［操作方法]　（ランキング登録ウィンドウ)
+Enterキー：入力されている名前で登録
+　Escキー：キャンセル
+
+[操作方法]　（ゲーム外で共通)
+Tabキー　：ボタンや入力フォームの選択
+Spaceキー：Tabキーで選択した項目で決定
+　\　Tキー：｢Title｣ボタンが表示されている場合、タイトル画面へ
+　Escキー：プログラム終了
+またはマウス操作
+
+［ゲームモード］
+タイトル画面で Mode:Hard をチェックすると、
+Hard Modeになります。
+
+Normal Mode：通常のゲームです
+　Hard Mode：みみはなれがカゴを狙うようになり、
+ \t　どんぐり。とにゅぅの出現率が上がります。
+
+［キャラクター］
+どんぐり。：木もないのに落ちてくる。 ＋１００点
+てんぷら\　：食べれないので －３００点
+みみはなれ：正式名称／みみはなれうさぎ しかし凶暴なので即Game Over
+にゅぅ\　\　：にゅぅ！にゅーにゅにゅーにゅにゅう！ ＋８００点
+"}
+	mesbox RNG,400,250,4
+	button "Title",*toptitle
+	gmode 4,64,64,256
+	color 128,128,128
+	gcopy 3,72,0
+	pos 100
+	gcopy 3,0,72
+	pos 200
+	gcopy 3,72,72
+	pos 300,300
+	gcopy 3,136,0,32,32
+	color 0,0,0
+	pos 0,330
+	mes "てんぷら"
+	pos 100,330
+	mes "どんぐり。"
+	pos 200,330
+	mes "みみはなれ"
+	pos 300,330
+	mes "にゅぅ"
+	repeat
+	getkey gameend,84
+	if gameend=1:goto *toptitle;タイトルへ戻る
+	getkey gameend,27
+	if gameend=1:end;ESCキーで終了
+	wait 5
+	loop
+	stop
+*Credit
+	cls
+	mes {"プログラム／てんなな
+	
+効果音／ザ・マッチメイカァズさんからの借り物
+
+音楽／ＴＡＭ Music Factoryさんからの借り物
+
+絵とキャラクター／「てんなな宙」の愉快な住民達
+（どんぐり氏、ななみぃ氏、エピア氏、てんなな)
+
+Special Thanks／
+	・Hot Soup Processor開発者のおにたま氏
+
+	・HSPDX.DLL  作者のSinagawa氏
+
+	・「てんなな宙」の愉快な住民達
+
+	・奈良高専情報処理研究会
+		"}
+	button "Title",*toptitle
+	font "ＭＳ ゴシック",12,
+;	mes "(やっつけ仕事でごめんなさい）"
+	repeat
+	getkey gameend,84
+	if gameend=1:goto *toptitle;タイトルへ戻る
+	getkey gameend,27
+	if gameend=1:end;ESCキーで終了
+	wait 5
+	loop
+		stop
